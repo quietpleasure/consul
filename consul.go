@@ -13,23 +13,31 @@ import (
 var ErrServicesNotFound error = fmt.Errorf("no service addresses found")
 
 // Registry defines a Consul-based service regisry.
-type Registry struct {
+type Consul struct {
 	client *api.Client
+	config *Config
 }
 
-// NewRegistry creates a new Consul-based service registry instance.
-func NewRegistry(consulAddr string) (*Registry, error) {
-	config := api.DefaultConfig()
-	config.Address = consulAddr
-	client, err := api.NewClient(config)
+type Config struct {
+	Addr string
+	Port int
+	User string
+	Pass string
+}
+
+// New creates a new Consul-based service registry instance.
+func New(config *Config) (*Consul, error) {
+	cfg := api.DefaultConfig()
+	cfg.Address = fmt.Sprintf("%s:%d", config.Addr, config.Port)
+	client, err := api.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Registry{client: client}, nil
+	return &Consul{client: client, config: config}, nil
 }
 
 // Register creates a service record in the registry and return instanceID
-func (r *Registry) Register(serviceName, serviceHostPort string) (string, error) {
+func (c *Consul) Register(serviceName, serviceHostPort string, serviceTags []string) (string, error) {
 	parts := strings.Split(serviceHostPort, ":")
 	if len(parts) != 2 {
 		return "", errors.New("hostPort must be in a form of <host>:<port>, example: localhost:8081")
@@ -39,26 +47,29 @@ func (r *Registry) Register(serviceName, serviceHostPort string) (string, error)
 		return "", err
 	}
 	instanceID := fmt.Sprintf("%s-%s", serviceName, uuid.New())
-	if err := r.client.Agent().ServiceRegister(&api.AgentServiceRegistration{
-		Address: parts[0],
-		ID:      instanceID,
-		Name:    serviceName,
-		Port:    port,
-		Check:   &api.AgentServiceCheck{CheckID: instanceID, TTL: "5s"},
-	}); err != nil {
+	if err := c.client.Agent().ServiceRegister(
+		&api.AgentServiceRegistration{
+			Address: parts[0],
+			ID:      instanceID,
+			Name:    serviceName,
+			Port:    port,
+			Tags:    serviceTags,
+			Check:   &api.AgentServiceCheck{CheckID: instanceID, TTL: "5s"},
+		},
+	); err != nil {
 		return "", err
 	}
 	return instanceID, nil
 }
 
 // Deregister removes a service record from the registry.
-func (r *Registry) Deregister(instanceID string, _ string) error {
-	return r.client.Agent().ServiceDeregister(instanceID)
+func (c *Consul) Deregister(instanceID string) error {
+	return c.client.Agent().ServiceDeregister(instanceID)
 }
 
 // ServiceAddresses returns the list of addresses of active instances of the given service.
-func (r *Registry) ServiceAddresses(serviceName string) ([]string, error) {
-	entries, _, err := r.client.Health().Service(serviceName, "", true, nil)
+func (c *Consul) ServiceAddresses(serviceName string) ([]string, error) {
+	entries, _, err := c.client.Health().Service(serviceName, "", true, nil)
 	if err != nil {
 		return nil, err
 	} else if len(entries) == 0 {
@@ -72,7 +83,7 @@ func (r *Registry) ServiceAddresses(serviceName string) ([]string, error) {
 }
 
 // ReportHealthyState is a push mechanism for reporting healthy state to the registry.
-func (r *Registry) ReportHealthyState(instanceID string, serviceName string) error {
+func (c *Consul) ReportHealthyState(instanceID string) error {
 	// return r.client.Agent().PassTTL(instanceID, "")
-	return r.client.Agent().UpdateTTL(instanceID, "my custom output:"+serviceName, api.HealthCritical)
+	return c.client.Agent().UpdateTTL(instanceID, "", api.HealthCritical)
 }
