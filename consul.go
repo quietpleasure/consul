@@ -88,5 +88,5 @@ func (r *Registry) ServiceAddresses(serviceName string) ([]string, error) {
 // ReportHealthyState is a push mechanism for reporting healthy state to the registry.
 func (r *Registry) ReportHealthyState() error {
 	// return r.client.Agent().PassTTL(instanceID, "")
-	return r.client.Agent().UpdateTTL(r.instanceID, "", api.HealthCritical)
+	return r.client.Agent().UpdateTTL(r.instanceID, "go example", api.HealthPassing)
 }
