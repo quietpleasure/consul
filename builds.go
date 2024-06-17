@@ -45,3 +45,21 @@ func MakeRegistryAndRegisterService(ctx context.Context, cfgService *ServiceConf
 	}()
 	return registry, nil
 }
+
+type Effector func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config, chanErr chan error) (*Registry, error) 
+func Retry(effector Effector) Effector {
+	return func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config, chanErr chan error) (*Registry, error) {
+		for attempt := 1; ; attempt++ {
+			reg, err := effector(ctx, cfgService, cfgConsul, chanErr)
+			if err == nil {
+				return reg, nil
+			}
+			delay := time.Second << uint(attempt)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():				
+				return nil, ctx.Err()
+			}
+		}
+	}
+}
