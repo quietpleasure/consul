@@ -3,6 +3,7 @@ package consul
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -13,7 +14,7 @@ type ServiceConfig struct {
 	Tags []string
 }
 
-func MakeRegistryAndRegisterService(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config, chanErr chan error) (*Registry, error) {
+func MakeRegistryAndRegisterService(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config) (*Registry, error) {
 	if cfgConsul == nil {
 		cfgConsul = DefaultConfig()
 	}
@@ -28,38 +29,27 @@ func MakeRegistryAndRegisterService(ctx context.Context, cfgService *ServiceConf
 		return nil, err
 	}
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				if err := registry.ReportHealthyState(); err != nil {
-					//отвалился коннект к Консулу, нужно переподключать
-					chanErr <- fmt.Errorf("report healthy state: %w", err)
-					return
-				}
-			}
-			time.Sleep(time.Second)
-		}
-	}()
 	return registry, nil
 }
 
-type Effector func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config, chanErr chan error) (*Registry, error) 
+type Effector func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config) (*Registry, error)
+
 func Retry(effector Effector) Effector {
-	return func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config, chanErr chan error) (*Registry, error) {
+	return func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *Config) (*Registry, error) {
 		for attempt := 1; ; attempt++ {
-			reg, err := effector(ctx, cfgService, cfgConsul, chanErr)
+			reg, err := effector(ctx, cfgService, cfgConsul)
 			if err == nil {
 				return reg, nil
 			}
 			delay := time.Second << uint(attempt)
+			log.Printf("Attempt %d failed; Error: %s; retrying in %v", attempt, err, delay)
 			select {
 			case <-time.After(delay):
-			case <-ctx.Done():				
+			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
 		}
 	}
 }
+
+
