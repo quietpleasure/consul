@@ -2,8 +2,8 @@ package consul
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 )
 
@@ -24,9 +24,8 @@ func DefaultConfig() *Config {
 
 // Registry defines a Consul-based service regisry.
 type Registry struct {
-	client     *api.Client
-	config     *Config
-	instanceID string
+	client *api.Client
+	config *Config
 }
 
 type Config struct {
@@ -48,16 +47,15 @@ func NewRegistry(config *Config) (*Registry, error) {
 }
 
 // Register creates a service record in the registry and return instanceID
-func (r *Registry) Register(serviceName, serviceHost string, servicePort int, serviceTags []string) error {
-	r.instanceID = fmt.Sprintf("%s-%s", serviceName, uuid.New())
+func (r *Registry) Register(serviceName, instanceID, serviceHost string, servicePort int, serviceTags []string) error {
 	if err := r.client.Agent().ServiceRegister(
 		&api.AgentServiceRegistration{
 			Address: serviceHost,
-			ID:      r.instanceID,
+			ID:      instanceID,
 			Name:    serviceName,
 			Port:    servicePort,
 			Tags:    serviceTags,
-			Check:   &api.AgentServiceCheck{CheckID: r.instanceID, TTL: "5s"},
+			Check:   &api.AgentServiceCheck{CheckID: instanceID, TTL: "5s"},
 		},
 	); err != nil {
 		return err
@@ -66,8 +64,8 @@ func (r *Registry) Register(serviceName, serviceHost string, servicePort int, se
 }
 
 // Deregister removes a service record from the registry.
-func (r *Registry) Deregister() error {
-	return r.client.Agent().ServiceDeregister(r.instanceID)
+func (r *Registry) Deregister(instanceID string) error {
+	return r.client.Agent().ServiceDeregister(instanceID)
 }
 
 // ServiceAddresses returns the list of addresses of active instances of the given service.
@@ -86,7 +84,6 @@ func (r *Registry) ServiceAddresses(serviceName string) ([]string, error) {
 }
 
 // ReportHealthyState is a push mechanism for reporting healthy state to the registry.
-func (r *Registry) ReportHealthyState() error {
-	// return r.client.Agent().PassTTL(instanceID, "")
-	return r.client.Agent().UpdateTTL(r.instanceID, "go example", api.HealthPassing)
+func (r *Registry) ReportHealthyState(instanceID string, outputComment ...string) error {
+	return r.client.Agent().UpdateTTL(instanceID, strings.Join(outputComment, "|"), api.HealthPassing)
 }

@@ -1,4 +1,4 @@
-package consul
+package resolvergrpc
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"time"
 
 	_ "github.com/mbobakov/grpc-consul-resolver" // It's important
+
+	"github.com/quietpleasure/consul"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/balancer/roundrobin"
@@ -32,8 +34,8 @@ type options struct {
 
 // consul://[user:password@]127.0.0.127:8555/my-service?[healthy=]&[wait=]&[near=]&[insecure=]&[limit=]&[tag=]&[token=]
 // After a positive answer, it is advisable defer conn.Close()
-func (r *Registry) ResolveServiceConnectGRPC(serviceName string, opts ...Option) (*grpc.ClientConn, error) {
-	target, err := r.makeTarget(serviceName, opts...)
+func ServiceConnect(serviceName string, cfg *consul.Config, opts ...Option) (*grpc.ClientConn, error) {
+	target, err := makeTarget(serviceName, cfg, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("decode options: %w", err)
 	}
@@ -44,10 +46,10 @@ func (r *Registry) ResolveServiceConnectGRPC(serviceName string, opts ...Option)
 	)
 }
 
-func (r *Registry) makeTarget(serviceName string, opts ...Option) (string, error) {
+func makeTarget(serviceName string, cfg *consul.Config, opts ...Option) (string, error) {
 	var userpass *url.Userinfo
-	if r.config.User != "" && r.config.Pass != "" {
-		userpass = url.UserPassword(r.config.User, r.config.Pass)
+	if cfg.User != "" && cfg.Pass != "" {
+		userpass = url.UserPassword(cfg.User, cfg.Pass)
 	}
 
 	var opt options
@@ -95,8 +97,8 @@ func (r *Registry) makeTarget(serviceName string, opts ...Option) (string, error
 		args.Set("require-consistent", fmt.Sprintf("%v", *opt.requireconsistent))
 	}
 	u := url.URL{
-		Scheme:   SELF_NAME,
-		Host:     fmt.Sprintf("%s:%d", r.config.Host, r.config.Port),
+		Scheme:   consul.SELF_NAME,
+		Host:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Path:     serviceName,
 		User:     userpass,
 		RawQuery: args.Encode(),

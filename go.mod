@@ -3,7 +3,6 @@ module github.com/quietpleasure/consul
 go 1.22.4
 
 require (
-	github.com/google/uuid v1.6.0
 	github.com/hashicorp/consul/api v1.29.1
 	github.com/mbobakov/grpc-consul-resolver v1.5.3
 	google.golang.org/grpc v1.64.0
