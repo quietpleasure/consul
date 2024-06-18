@@ -33,7 +33,7 @@ func MakeRegistryAndRegisterService(ctx context.Context, instanceID string, cfgS
 	return registry, nil
 }
 
-type FuncExecutor func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *consul.Config) (*consul.Registry, error)
+type FuncExecutor func(ctx context.Context, instanceID string, cfgService *ServiceConfig, cfgConsul *consul.Config) (*consul.Registry, error)
 
 type Feedback struct {
 	Error   error
@@ -46,10 +46,10 @@ func Retry(function FuncExecutor, feedback chan Feedback, maxAttempts ...int) Fu
 	if len(maxAttempts) > 0 {
 		max = maxAttempts[0]
 	}
-	return func(ctx context.Context, cfgService *ServiceConfig, cfgConsul *consul.Config) (*consul.Registry, error) {
+	return func(ctx context.Context, instanceID string, cfgService *ServiceConfig, cfgConsul *consul.Config) (*consul.Registry, error) {
 		attempt := 1
 		for {
-			reg, err := function(ctx, cfgService, cfgConsul)
+			reg, err := function(ctx, instanceID, cfgService, cfgConsul)
 			if err == nil {
 				feedback <- Feedback{
 					Message: fmt.Sprintf("retry attempt %d successful", attempt),
