@@ -41,7 +41,6 @@ type Feedback struct {
 }
 
 func Retry(function FuncExecutor, feedback chan Feedback, maxAttempts ...int) FuncExecutor {
-	defer close(feedback)
 	var max int
 	if len(maxAttempts) > 0 {
 		max = maxAttempts[0]
