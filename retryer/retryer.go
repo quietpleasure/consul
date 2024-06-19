@@ -71,6 +71,7 @@ func Retry(function FuncExecutor, feedback chan Feedback, maxAttempts ...int) Fu
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
+			attempt++
 		}
 	}
 }
