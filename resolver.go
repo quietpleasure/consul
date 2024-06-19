@@ -1,4 +1,4 @@
-package resolvergrpc
+package consul
 
 import (
 	"fmt"
@@ -7,15 +7,13 @@ import (
 
 	_ "github.com/mbobakov/grpc-consul-resolver" // It's important
 
-	"github.com/quietpleasure/consul"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/balancer/roundrobin"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Function for passing connection parameters
-type Option func(option *options) error
+type OptionFunc func(option *options) error
 
 type options struct {
 	limit             *int
@@ -34,31 +32,36 @@ type options struct {
 
 // consul://[user:password@]127.0.0.127:8555/my-service?[healthy=]&[wait=]&[near=]&[insecure=]&[limit=]&[tag=]&[token=]
 // After a positive answer, it is advisable defer conn.Close()
-func ServiceConnect(serviceName string, cfg *consul.Config, opts ...Option) (*grpc.ClientConn, error) {
-	target, err := makeTarget(serviceName, cfg, opts...)
+func (r *Registry) ServiceConnectGRPC(serviceName string, opts ...OptionFunc) (*grpc.ClientConn, error) {
+	var userpass *url.Userinfo
+	if r.config.HttpAuth.Username != "" && r.config.HttpAuth.Password != "" {
+		userpass = url.UserPassword(r.config.HttpAuth.Username, r.config.HttpAuth.Password)
+	}
+	querys, err := targetQueryValues(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("decode options: %w", err)
 	}
+	u := url.URL{
+		Scheme:   SELF_NAME,
+		Host:     r.config.Address,
+		Path:     serviceName,
+		User:     userpass,
+		RawQuery: querys.Encode(),
+	}
 	return grpc.NewClient(
-		target,
+		u.String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(fmt.Sprintf(`{"loadBalancingPolicy": "%s"}`, roundrobin.Name)),
 	)
 }
 
-func makeTarget(serviceName string, cfg *consul.Config, opts ...Option) (string, error) {
-	var userpass *url.Userinfo
-	if cfg.User != "" && cfg.Pass != "" {
-		userpass = url.UserPassword(cfg.User, cfg.Pass)
-	}
-
+func targetQueryValues(opts ...OptionFunc) (url.Values, error) {
 	var opt options
 	for _, option := range opts {
 		if err := option(&opt); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
-
 	args := url.Values{}
 	if opt.tag != nil {
 		args.Set("tag", *opt.tag)
@@ -96,18 +99,12 @@ func makeTarget(serviceName string, cfg *consul.Config, opts ...Option) (string,
 	if opt.requireconsistent != nil {
 		args.Set("require-consistent", fmt.Sprintf("%v", *opt.requireconsistent))
 	}
-	u := url.URL{
-		Scheme:   consul.SELF_NAME,
-		Host:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Path:     serviceName,
-		User:     userpass,
-		RawQuery: args.Encode(),
-	}
-	return u.String(), nil
+	
+	return args, nil
 }
 
 // Select endpoints only with this tag
-func WithTag(tag string) Option {
+func WithTag(tag string) OptionFunc {
 	return func(options *options) error {
 		if tag != "" {
 			options.tag = &tag
@@ -117,7 +114,7 @@ func WithTag(tag string) Option {
 }
 
 // Return only endpoints which pass all health-checks. Default: false
-func WithHealthy(healthy bool) Option {
+func WithHealthy(healthy bool) OptionFunc {
 	return func(options *options) error {
 		check := "true"
 		if healthy {
@@ -127,7 +124,7 @@ func WithHealthy(healthy bool) Option {
 	}
 }
 
-func WithWait(wait time.Duration) Option {
+func WithWait(wait time.Duration) OptionFunc {
 	return func(options *options) error {
 		if wait < 0 {
 			return fmt.Errorf("wait time cannot be less than zero")
@@ -141,7 +138,7 @@ func WithWait(wait time.Duration) Option {
 }
 
 // Allow insecure communication with Consul. Default: true
-func WithInsecure(insecure bool) Option {
+func WithInsecure(insecure bool) OptionFunc {
 	return func(options *options) error {
 		allow := "false"
 		if !insecure {
@@ -157,7 +154,7 @@ const OPT_NEAR_IP = "_ip"
 // Near  - Specifies a node to sort near based on distance sorting using Network Coordinates. The nearest instance to the specified node will be returned first, and subsequent nodes in the response will be sorted in ascending order of estimated round-trip times. If the node given does not exist, the nodes in the response will be shuffled. If unspecified, the response will be shuffled by default.
 // _agent - Returns results nearest the agent servicing the request.
 // _ip - Returns results nearest to the node associated with the source IP where the query was executed from. For HTTP the source IP is the remote peer's IP address or the value of the X-Forwarded-For header with the header taking precedence. For DNS the source IP is the remote peer's IP address or the value of the EDNS client IP with the EDNS client IP taking precedence.
-func WithNear(near string) Option {
+func WithNear(near string) OptionFunc {
 	return func(options *options) error {
 		if (near != "" && near != OPT_NEAR_IP) || near == "" {
 			return nil
@@ -169,7 +166,7 @@ func WithNear(near string) Option {
 }
 
 // Limit number of endpoints for the service. Default: no limit
-func WithLimit(limit int) Option {
+func WithLimit(limit int) OptionFunc {
 	return func(options *options) error {
 		if limit < 0 {
 			return fmt.Errorf("limit cannot be less than zero")
@@ -182,7 +179,7 @@ func WithLimit(limit int) Option {
 }
 
 // Http-client timeout. Default: 60s
-func WithTimeout(timeout time.Duration) Option {
+func WithTimeout(timeout time.Duration) OptionFunc {
 	return func(options *options) error {
 		if timeout < 0 {
 			return fmt.Errorf("timeout cannot be less than zero")
@@ -196,7 +193,7 @@ func WithTimeout(timeout time.Duration) Option {
 }
 
 // Max backoff time for reconnect to consul. Reconnects will start from 10ms to max-backoff exponentialy with factor 2. Default: 1s
-func WithMaxBackoff(maxbackoff time.Duration) Option {
+func WithMaxBackoff(maxbackoff time.Duration) OptionFunc {
 	return func(options *options) error {
 		if maxbackoff < 0 {
 			return fmt.Errorf("maxbackoff cannot be less than zero")
@@ -210,7 +207,7 @@ func WithMaxBackoff(maxbackoff time.Duration) Option {
 }
 
 // Consul token
-func WithToken(token string) Option {
+func WithToken(token string) OptionFunc {
 	return func(options *options) error {
 		if token != "" {
 			options.token = &token
@@ -220,7 +217,7 @@ func WithToken(token string) Option {
 }
 
 // Consul datacenter to choose. Optional
-func WithDC(dc string) Option {
+func WithDC(dc string) OptionFunc {
 	return func(options *options) error {
 		if dc != "" {
 			options.dc = &dc
@@ -230,7 +227,7 @@ func WithDC(dc string) Option {
 }
 
 // Allow stale results from the agent. https://www.consul.io/api/features/consistency.html#stale
-func WithAllowStale(stale bool) Option {
+func WithAllowStale(stale bool) OptionFunc {
 	return func(options *options) error {
 		options.allowstale = &stale
 		return nil
@@ -238,7 +235,7 @@ func WithAllowStale(stale bool) Option {
 }
 
 // RequireConsistent forces the read to be fully consistent. This is more expensive but prevents ever performing a stale read.
-func WithRequireConsistent(require bool) Option {
+func WithRequireConsistent(require bool) OptionFunc {
 	return func(options *options) error {
 		options.requireconsistent = &require
 		return nil

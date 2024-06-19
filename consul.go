@@ -25,7 +25,7 @@ func DefaultConfig() *Config {
 // Registry defines a Consul-based service regisry.
 type Registry struct {
 	client *api.Client
-	config *Config
+	config *api.Config
 }
 
 type Config struct {
@@ -38,12 +38,18 @@ type Config struct {
 // NewRegistry creates a new Consul-based service registry instance.
 func NewRegistry(config *Config) (*Registry, error) {
 	cfg := api.DefaultConfig()
-	cfg.Address = fmt.Sprintf("%s:%d", config.Host, config.Port)
+	if config != nil {
+		cfg.Address = fmt.Sprintf("%s:%d", config.Host, config.Port)
+		cfg.HttpAuth = &api.HttpBasicAuth{
+			Username: config.User,
+			Password: config.Pass,
+		}
+	} 	
 	client, err := api.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Registry{client: client, config: config}, nil
+	return &Registry{client: client, config: cfg}, nil
 }
 
 // Register creates a service record in the registry and return instanceID
