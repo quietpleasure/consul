@@ -70,7 +70,7 @@ func (r *Registry) Register(serviceName, instanceID, serviceHost string, service
 }
 
 // Deregister removes a service record from the registry.
-func (r *Registry) Deregister(instanceID string) error {
+func (r *Registry) Deregister(_, instanceID string) error {
 	return r.client.Agent().ServiceDeregister(instanceID)
 }
 
@@ -90,6 +90,6 @@ func (r *Registry) ServiceAddresses(serviceName string) ([]string, error) {
 }
 
 // ReportHealthyState is a push mechanism for reporting healthy state to the registry.
-func (r *Registry) ReportHealthyState(instanceID string, outputComment ...string) error {
+func (r *Registry) ReportHealthyState(_, instanceID string, outputComment ...string) error {
 	return r.client.Agent().UpdateTTL(instanceID, strings.Join(outputComment, "|"), api.HealthPassing)
 }
